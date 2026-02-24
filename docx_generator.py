@@ -14,9 +14,7 @@ from docx.shared import Pt
 from paths import (
     TEMPLATE_CONTRACT,
     TEMPLATE_SCHEDULE,
-    ISTISNA_TEMPLATE_CONTRACT,
-    ISTISNA_TEMPLATE_REQUISITES,
-    ISTISNA_TEMPLATE_SPEC,
+    ISTISNA_TEMPLATE,
 )
 
 # ВАЖНО: чтобы документ оставался 1:1 как шаблон, мы НЕ трогаем стили/шрифты/абзацы.
@@ -169,6 +167,15 @@ def _replace_placeholder_in_paragraph_strict(paragraph, key: str, value: str,
         _clone_run_rpr(donor_run, new_run)
         try:
             new_run.style = donor_run.style
+        except Exception:
+            pass
+        # Fallback for runs without explicit rPr: copy high-level font attrs.
+        try:
+            new_run.font.name = donor_run.font.name
+            new_run.font.size = donor_run.font.size
+            new_run.bold = donor_run.bold
+            new_run.italic = donor_run.italic
+            new_run.underline = donor_run.underline
         except Exception:
             pass
     else:
@@ -428,23 +435,11 @@ def generate_contract_and_schedule(data: dict, out_dir: Path):
 
 def generate_istisna_documents(data: dict, out_dir: Path):
     """
-    Формирует три docx по Истисна:
-    1) Договор
-    2) Реквизиты
-    3) Спецификация
+    Формирует единый docx по Истисна (3 страницы в одном файле).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
     safe_number = str(data["contract_number"]).replace("/", "_")
-    templates = [
-        ("istisna_dogovor", ISTISNA_TEMPLATE_CONTRACT),
-        ("istisna_rekvizity", ISTISNA_TEMPLATE_REQUISITES),
-        ("istisna_specifikaciya", ISTISNA_TEMPLATE_SPEC),
-    ]
-    outputs = []
-    for prefix, template in templates:
-        out = out_dir / f"{prefix}_{safe_number}.docx"
-        fill_placeholders(template, out, data)
-        outputs.append(out)
-
-    return tuple(outputs)
+    out = out_dir / f"istisna_{safe_number}.docx"
+    fill_placeholders(ISTISNA_TEMPLATE, out, data)
+    return (out,)

@@ -2,7 +2,7 @@
 
 Telegram-бот на Python, который пошагово собирает данные у пользователя и генерирует DOCX-документы:
 1) Для `Мурабаха` — 2 файла (договор + график платежей)
-2) Для `Истисна` — 3 файла (договор + реквизиты + спецификация)
+2) Для `Истисна` — 1 файл (единый договор на 3 страницах)
 
 ⚠️ PDF-генерация отключена (по текущей конфигурации проекта).
 
@@ -44,9 +44,7 @@ Telegram-бот на Python, который пошагово собирает д
 - templates/
 - murabaha_template.docx
 - murabaha_schedule.docx
-- istisna_contract_template.docx
-- istisna_requisites_template.docx
-- istisna_spec_template.docx
+- istisna_template.docx
 - data/
 - counter.json     (не коммитится)
 - output/
