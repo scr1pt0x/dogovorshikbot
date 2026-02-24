@@ -11,6 +11,9 @@ from paths import (
     OUTPUT_DIR,
     DATA_DIR,
     COUNTER_FILE,
+    ISTISNA_TEMPLATE_CONTRACT,
+    ISTISNA_TEMPLATE_REQUISITES,
+    ISTISNA_TEMPLATE_SPEC,
 )
 
 from handlers import conv_handler
@@ -30,7 +33,14 @@ def ensure_project_layout() -> None:
 
     # Проверяем наличие шаблонов
     missing = []
-    for name in ("murabaha_template.docx", "murabaha_schedule.docx"):
+    required_templates = [
+        "murabaha_template.docx",
+        "murabaha_schedule.docx",
+        ISTISNA_TEMPLATE_CONTRACT.name,
+        ISTISNA_TEMPLATE_REQUISITES.name,
+        ISTISNA_TEMPLATE_SPEC.name,
+    ]
+    for name in required_templates:
         if not (TEMPLATES_DIR / name).exists():
             missing.append(name)
     if missing:

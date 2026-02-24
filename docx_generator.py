@@ -11,7 +11,13 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
-from paths import TEMPLATE_CONTRACT, TEMPLATE_SCHEDULE
+from paths import (
+    TEMPLATE_CONTRACT,
+    TEMPLATE_SCHEDULE,
+    ISTISNA_TEMPLATE_CONTRACT,
+    ISTISNA_TEMPLATE_REQUISITES,
+    ISTISNA_TEMPLATE_SPEC,
+)
 
 # ВАЖНО: чтобы документ оставался 1:1 как шаблон, мы НЕ трогаем стили/шрифты/абзацы.
 # Генератор делает только замену плейсхолдеров, сохраняя исходное форматирование шаблона.
@@ -410,10 +416,35 @@ def generate_contract_and_schedule(data: dict, out_dir: Path):
     contract_template = TEMPLATE_CONTRACT
     schedule_template = TEMPLATE_SCHEDULE
 
-    contract_out = out_dir / f"dogovor_{data['contract_number']}.docx"
-    schedule_out = out_dir / f"schedule_{data['contract_number']}.docx"
+    safe_number = str(data["contract_number"]).replace("/", "_")
+    contract_out = out_dir / f"dogovor_{safe_number}.docx"
+    schedule_out = out_dir / f"schedule_{safe_number}.docx"
 
     fill_placeholders(contract_template, contract_out, data)
     fill_placeholders(schedule_template, schedule_out, data)
 
     return contract_out, schedule_out
+
+
+def generate_istisna_documents(data: dict, out_dir: Path):
+    """
+    Формирует три docx по Истисна:
+    1) Договор
+    2) Реквизиты
+    3) Спецификация
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_number = str(data["contract_number"]).replace("/", "_")
+    templates = [
+        ("istisna_dogovor", ISTISNA_TEMPLATE_CONTRACT),
+        ("istisna_rekvizity", ISTISNA_TEMPLATE_REQUISITES),
+        ("istisna_specifikaciya", ISTISNA_TEMPLATE_SPEC),
+    ]
+    outputs = []
+    for prefix, template in templates:
+        out = out_dir / f"{prefix}_{safe_number}.docx"
+        fill_placeholders(template, out, data)
+        outputs.append(out)
+
+    return tuple(outputs)

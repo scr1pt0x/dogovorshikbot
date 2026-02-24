@@ -42,3 +42,7 @@ data/counter.json
 =======
 *.docx
 >>>>>>> 1f959c8 (Restore project after local sync, add README)
+
+!templates/istisna_contract_template.docx
+!templates/istisna_requisites_template.docx
+!templates/istisna_spec_template.docx

@@ -10,3 +10,7 @@ COUNTER_FILE = DATA_DIR / "counter.json"
 
 TEMPLATE_CONTRACT = TEMPLATES_DIR / "murabaha_template.docx"
 TEMPLATE_SCHEDULE = TEMPLATES_DIR / "murabaha_schedule.docx"
+
+ISTISNA_TEMPLATE_CONTRACT = TEMPLATES_DIR / "istisna_contract_template.docx"
+ISTISNA_TEMPLATE_REQUISITES = TEMPLATES_DIR / "istisna_requisites_template.docx"
+ISTISNA_TEMPLATE_SPEC = TEMPLATES_DIR / "istisna_spec_template.docx"
