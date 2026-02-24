@@ -4,6 +4,7 @@
 from pathlib import Path
 import copy
 import subprocess
+from typing import Optional, Tuple
 
 from docx import Document
 from docx.document import Document as DocxDocument
@@ -39,6 +40,36 @@ def _clone_run_rpr(src_run, dst_run) -> None:
         dst_r.remove(dst_rpr)
 
     dst_r.insert(0, copy.deepcopy(src_rpr))
+
+
+def _set_run_font(run, family: str, size_pt: int) -> None:
+    """
+    Явно фиксирует шрифт run на high/low level API.
+    Нужен как fallback для шаблонов, где у донора нет явного rPr.
+    """
+    run.font.name = family
+    run.font.size = Pt(size_pt)
+    r = run._element
+    rpr = r.get_or_add_rPr()
+    rfonts = rpr.rFonts
+    if rfonts is None:
+        rfonts = OxmlElement("w:rFonts")
+        rpr.append(rfonts)
+    rfonts.set(qn("w:ascii"), family)
+    rfonts.set(qn("w:hAnsi"), family)
+    rfonts.set(qn("w:eastAsia"), family)
+    rfonts.set(qn("w:cs"), family)
+    half_points = str(int(size_pt * 2))
+    sz = rpr.find(qn("w:sz"))
+    if sz is None:
+        sz = OxmlElement("w:sz")
+        rpr.append(sz)
+    sz.set(qn("w:val"), half_points)
+    szcs = rpr.find(qn("w:szCs"))
+    if szcs is None:
+        szcs = OxmlElement("w:szCs")
+        rpr.append(szcs)
+    szcs.set(qn("w:val"), half_points)
 
 
 # noinspection DuplicatedCode
@@ -109,8 +140,14 @@ def _force_font(run, pt=10, family="Times New Roman"):
         rpr.remove(rstyle)
 
 
-def _replace_placeholder_in_paragraph_strict(paragraph, key: str, value: str,
-                                            pt: int = 10, family: str = "Times New Roman") -> bool:
+def _replace_placeholder_in_paragraph_strict(
+    paragraph,
+    key: str,
+    value: str,
+    pt: int = 10,
+    family: str = "Times New Roman",
+    preferred_font: Optional[Tuple[str, int]] = None,
+) -> bool:
     """
     Жёсткая замена плейсхолдера key на value в абзаце, даже если key разбит на несколько runs.
     Возвращает True если была произведена замена.
@@ -178,6 +215,12 @@ def _replace_placeholder_in_paragraph_strict(paragraph, key: str, value: str,
             new_run.underline = donor_run.underline
         except Exception:
             pass
+        # If donor has no explicit font, pin configured default.
+        if preferred_font and donor_run.font.name is None and donor_run.font.size is None:
+            try:
+                _set_run_font(new_run, preferred_font[0], preferred_font[1])
+            except Exception:
+                pass
     else:
         _force_font(new_run, pt, family)
         for j in range(first_i, last_i + 1):
@@ -187,7 +230,12 @@ def _replace_placeholder_in_paragraph_strict(paragraph, key: str, value: str,
     return True
 
 
-def _replace_in_paragraph(paragraph, mapping: dict, fallback_font_pt: int = 10):
+def _replace_in_paragraph(
+    paragraph,
+    mapping: dict,
+    fallback_font_pt: int = 10,
+    preferred_font: Optional[Tuple[str, int]] = None,
+):
     changed = False
 
     # 1) Простые замены внутри отдельных runs
@@ -199,6 +247,11 @@ def _replace_in_paragraph(paragraph, mapping: dict, fallback_font_pt: int = 10):
                 new_text = new_text.replace(key, str(val))
         if new_text != original:
             run.text = new_text
+            if preferred_font and run.font.name is None and run.font.size is None:
+                try:
+                    _set_run_font(run, preferred_font[0], preferred_font[1])
+                except Exception:
+                    pass
             if not PRESERVE_TEMPLATE_FORMAT:
                 _force_font(run, fallback_font_pt, "Times New Roman")
             changed = True
@@ -206,7 +259,14 @@ def _replace_in_paragraph(paragraph, mapping: dict, fallback_font_pt: int = 10):
     # 2) Жёсткая замена, если плейсхолдеры разбиты на несколько runs
     for key, val in mapping.items():
         if key in (paragraph.text or ""):
-            if _replace_placeholder_in_paragraph_strict(paragraph, key, str(val), fallback_font_pt, "Times New Roman"):
+            if _replace_placeholder_in_paragraph_strict(
+                paragraph,
+                key,
+                str(val),
+                fallback_font_pt,
+                "Times New Roman",
+                preferred_font=preferred_font,
+            ):
                 changed = True
 
     if changed and not PRESERVE_TEMPLATE_FORMAT:
@@ -351,15 +411,19 @@ def _desuperscript_paragraph(paragraph):
             run.text = run.text.translate(_SUPERSCRIPT_MAP)
 
 
-def _replace_in_document(doc: DocxDocument, mapping: dict):
+def _replace_in_document(
+    doc: DocxDocument,
+    mapping: dict,
+    preferred_font: Optional[Tuple[str, int]] = None,
+):
     for para in doc.paragraphs:
-        _replace_in_paragraph(para, mapping)
+        _replace_in_paragraph(para, mapping, preferred_font=preferred_font)
 
     def process_table(table):
         for row in table.rows:
             for cell in row.cells:
                 for cell_para in cell.paragraphs:
-                    _replace_in_paragraph(cell_para, mapping)
+                    _replace_in_paragraph(cell_para, mapping, preferred_font=preferred_font)
                 for inner_tbl in cell.tables:
                     process_table(inner_tbl)
 
@@ -368,16 +432,21 @@ def _replace_in_document(doc: DocxDocument, mapping: dict):
 
     for section in doc.sections:
         for header_para in section.header.paragraphs:
-            _replace_in_paragraph(header_para, mapping)
+            _replace_in_paragraph(header_para, mapping, preferred_font=preferred_font)
         for header_tbl in section.header.tables:
             process_table(header_tbl)
         for footer_para in section.footer.paragraphs:
-            _replace_in_paragraph(footer_para, mapping)
+            _replace_in_paragraph(footer_para, mapping, preferred_font=preferred_font)
         for footer_tbl in section.footer.tables:
             process_table(footer_tbl)
 
 
-def fill_placeholders(doc_path: Path, output_path: Path, replacements: dict):
+def fill_placeholders(
+    doc_path: Path,
+    output_path: Path,
+    replacements: dict,
+    preferred_font: Optional[Tuple[str, int]] = None,
+):
     doc = Document(str(doc_path))
 
     if not PRESERVE_TEMPLATE_FORMAT:
@@ -388,7 +457,7 @@ def fill_placeholders(doc_path: Path, output_path: Path, replacements: dict):
         except Exception:
             pass
 
-    _replace_in_document(doc, replacements)
+    _replace_in_document(doc, replacements, preferred_font=preferred_font)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
 
@@ -441,5 +510,74 @@ def generate_istisna_documents(data: dict, out_dir: Path):
 
     safe_number = str(data["contract_number"]).replace("/", "_")
     out = out_dir / f"istisna_{safe_number}.docx"
-    fill_placeholders(ISTISNA_TEMPLATE, out, data)
+    fill_placeholders(ISTISNA_TEMPLATE, out, data, preferred_font=("Aptos", 11))
+
+    # Post-process Istisna document: clean highlight and fit item rows count.
+    doc = Document(str(out))
+    for para in doc.paragraphs:
+        if "Стоимость доставки Товара не включена в стоимость настоящего Договора." in (para.text or ""):
+            for run in para.runs:
+                run.font.highlight_color = None
+                run.font.color.rgb = None
+
+    item_qty = int(data.get("{{item_qty}}", 1) or 1)
+    if item_qty < 1:
+        item_qty = 1
+    spec_table = None
+    for table in doc.tables:
+        if table.rows and "НАИМЕНОВАНИЕ ТОВАРА" in " | ".join(c.text for c in table.rows[0].cells):
+            spec_table = table
+            break
+
+    if spec_table is not None and len(spec_table.rows) >= 3:
+        total_idx = None
+        for i, row in enumerate(spec_table.rows):
+            if "Итого:" in " ".join(c.text for c in row.cells):
+                total_idx = i
+                break
+        if total_idx is not None and total_idx > 1:
+            item_start = 1
+            existing_items = total_idx - item_start
+            template_row = spec_table.rows[item_start]
+
+            # Expand rows if requested qty is larger than template item rows.
+            while existing_items < item_qty:
+                new_tr = copy.deepcopy(template_row._tr)
+                spec_table._tbl.insert(total_idx, new_tr)
+                existing_items += 1
+                total_idx += 1
+
+            # Remove extra rows from bottom (keep exactly item_qty rows).
+            while existing_items > item_qty:
+                drop_idx = item_start + existing_items - 1
+                spec_table._tbl.remove(spec_table.rows[drop_idx]._tr)
+                existing_items -= 1
+                total_idx -= 1
+
+            # Fill item rows to avoid empty cells and keep visible numbering.
+            item_name = str(data.get("{{item_name}}", ""))
+            item_price = str(data.get("{{item_price}}", ""))
+            total_cost = str(data.get("{{total_cost_final}}", ""))
+            per_row_qty = "1" if item_qty > 1 else str(item_qty)
+            per_row_total = item_price if item_qty > 1 else total_cost
+            for n in range(item_qty):
+                row = spec_table.rows[item_start + n]
+                if len(row.cells) >= 6:
+                    row.cells[0].text = str(n + 1)
+                    row.cells[1].text = item_name
+                    row.cells[2].text = item_name
+                    row.cells[3].text = item_price
+                    row.cells[4].text = per_row_qty
+                    row.cells[5].text = per_row_total
+
+            # Ensure inserted values in table rows are explicitly Aptos 11.
+            for n in range(item_qty):
+                row = spec_table.rows[item_start + n]
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        for run in para.runs:
+                            if run.text:
+                                _set_run_font(run, "Aptos", 11)
+
+    doc.save(str(out))
     return (out,)
