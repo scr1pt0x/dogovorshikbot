@@ -515,11 +515,52 @@ def generate_istisna_documents(data: dict, out_dir: Path):
 
     # Post-process Istisna document: clean highlight and fit item rows count.
     doc = Document(str(out))
+
+    # Убрать лишние пробелы/табы в блоке ФИО покупателя (как у поставщика).
+    def _normalize_fio_paragraph(paragraph):
+        full = (paragraph.text or "").strip()
+        if not full or " (ФИО, подпись)" not in full:
+            return
+        normalized = " ".join(full.split())
+        if normalized == full and len(paragraph.runs) <= 1:
+            return
+        # Один run с нормализованным текстом, шрифт Aptos 11
+        for run in paragraph.runs:
+            run.text = ""
+        if paragraph.runs:
+            paragraph.runs[0].text = normalized
+            _set_run_font(paragraph.runs[0], "Aptos", 11)
+        else:
+            r = paragraph.add_run(normalized)
+            _set_run_font(r, "Aptos", 11)
+
+    buyer_fio_done = False
+    for table in doc.tables:
+        if buyer_fio_done:
+            break
+        for row in table.rows:
+            if buyer_fio_done:
+                break
+            for cell in row.cells:
+                if "ПОКУПАТЕЛЬ" not in (cell.text or ""):
+                    continue
+                for para in cell.paragraphs:
+                    if " (ФИО, подпись)" in (para.text or ""):
+                        _normalize_fio_paragraph(para)
+                        buyer_fio_done = True
+                        break
+                break
+
     for para in doc.paragraphs:
         if "Стоимость доставки Товара не включена в стоимость настоящего Договора." in (para.text or ""):
             for run in para.runs:
                 run.font.highlight_color = None
                 run.font.color.rgb = None
+        # Блок оплаты (п. 2.1, 2.2) — шрифт Aptos 11
+        if "Предоплата в размере" in (para.text or "") or "Оставшиеся" in (para.text or ""):
+            for run in para.runs:
+                if run.text:
+                    _set_run_font(run, "Aptos", 11)
 
     item_qty = int(data.get("{{item_qty}}", 1) or 1)
     if item_qty < 1:
