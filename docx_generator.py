@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 
 from docx import Document
 from docx.document import Document as DocxDocument
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
@@ -573,11 +574,27 @@ def generate_istisna_documents(data: dict, out_dir: Path):
             # Ensure inserted values in table rows are explicitly Aptos 11.
             for n in range(item_qty):
                 row = spec_table.rows[item_start + n]
-                for cell in row.cells:
+                for c_idx, cell in enumerate(row.cells):
                     for para in cell.paragraphs:
+                        # Center numeric columns: price, qty, total.
+                        if c_idx in (3, 4, 5):
+                            para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                         for run in para.runs:
                             if run.text:
                                 _set_run_font(run, "Aptos", 11)
+
+            # Merge total row right-side cells so no extra vertical separators appear.
+            total_row = spec_table.rows[total_idx]
+            if len(total_row.cells) >= 6:
+                for i in range(0, 6):
+                    total_row.cells[i].text = ""
+                merged_total = total_row.cells[0].merge(total_row.cells[5])
+                merged_total.text = f"Итого: {total_cost} рублей 00 копеек."
+                for para in merged_total.paragraphs:
+                    para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    for run in para.runs:
+                        if run.text:
+                            _set_run_font(run, "Aptos", 11)
 
     doc.save(str(out))
     return (out,)
