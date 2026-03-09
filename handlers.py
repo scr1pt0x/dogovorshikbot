@@ -183,20 +183,25 @@ async def ask_term_months(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Срок должен быть положительным целым. Повторите:")
         return TERM_MONTHS
     context.user_data["srok_dogov"] = int(s)
-    await update.message.reply_text("Введите день месяца для оплаты (1–31):")
+    await update.message.reply_text("Введите день месяца для оплаты (1–31) или оставьте поле пустым:")
     return PAYDAY
 
 
 async def ask_payday(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    s = update.message.text.strip()
-    if not s.isdigit():
-        await update.message.reply_text("Введите число 1–31:")
-        return PAYDAY
-    d = int(s)
-    if d < 1 or d > 31:
-        await update.message.reply_text("День оплаты должен быть 1–31. Повторите:")
-        return PAYDAY
-    context.user_data["data_opl"] = d
+    s = (update.message.text or "").strip()
+    if s == "":
+        # Пользователь оставил поле пустым: день оплаты будет вписан вручную на бумаге.
+        # В документ подставим небольшой пробельный зазор.
+        context.user_data["data_opl"] = None
+    else:
+        if not s.isdigit():
+            await update.message.reply_text("Введите число 1–31 или оставьте поле пустым:")
+            return PAYDAY
+        d = int(s)
+        if d < 1 or d > 31:
+            await update.message.reply_text("День оплаты должен быть 1–31 или оставьте поле пустым. Повторите:")
+            return PAYDAY
+        context.user_data["data_opl"] = d
 
     kb = ReplyKeyboardMarkup([["Да", "Нет"]], resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text("Залог (Да/Нет)?", reply_markup=kb)
@@ -361,6 +366,9 @@ async def ask_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_nacenka = ud["nacenka_tov"] * qty
         polnaya = total_sebestoim + total_nacenka
 
+        payday = ud.get("data_opl")
+        payday_display = payday if payday is not None else "    "
+
         text = (
             "Проверьте данные:\n\n"
             f"Договор: Мурабаха\n"
@@ -373,7 +381,7 @@ async def ask_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Полная стоимость: {polnaya} руб.\n"
             f"Первый взнос: {ud['pervi_vznos']} руб.\n"
             f"Срок: {ud['srok_dogov']} мес.\n"
-            f"День оплаты: {ud['data_opl']}\n"
+            f"День оплаты: {payday_display}\n"
             f"Залог: {ud['zalog']}\n"
         )
 
@@ -443,15 +451,23 @@ async def confirm_and_generate(update: Update, context: ContextTypes.DEFAULT_TYP
         total_nacenka = ud["nacenka_tov"] * qty
         polnaya_stoimost = total_sebestoim + total_nacenka
         ostatok_dolga = max(0, polnaya_stoimost - ud["pervi_vznos"])
+        payday = ud.get("data_opl")
 
-        schedule = generate_schedule(
-            start_date=ud["data_dogovora_dt"],
-            term=ud["srok_dogov"],
-            payday=ud["data_opl"],
-            cost=polnaya_stoimost,
-            advance=ud["pervi_vznos"],
-        )
-        ejemes = schedule[0]["amount"] if schedule else 0
+        if payday is not None:
+            schedule = generate_schedule(
+                start_date=ud["data_dogovora_dt"],
+                term=ud["srok_dogov"],
+                payday=payday,
+                cost=polnaya_stoimost,
+                advance=ud["pervi_vznos"],
+            )
+            ejemes = schedule[0]["amount"] if schedule else 0
+        else:
+            # День оплаты не задан → график будет заполняться вручную на бумаге.
+            schedule = []
+            ejemes = ""
+
+        payday_text = str(payday) if payday is not None else "    "
 
         repl = {
             "{{nomer_dogovora}}": ud["contract_number"],
@@ -469,7 +485,7 @@ async def confirm_and_generate(update: Update, context: ContextTypes.DEFAULT_TYP
             "{{pervi_vznos}}": ud["pervi_vznos"],
             "{{srok_dogov}}": ud["srok_dogov"],
             "{{ejemes_oplata}}": ejemes,
-            "{{data_opl}}": ud["data_opl"],
+            "{{data_opl}}": payday_text,
             "{{zalog}}": ud["zalog"],
             "{{ostatok_dolga}}": ostatok_dolga,
         }
