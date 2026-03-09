@@ -183,23 +183,32 @@ async def ask_term_months(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Срок должен быть положительным целым. Повторите:")
         return TERM_MONTHS
     context.user_data["srok_dogov"] = int(s)
-    await update.message.reply_text("Введите день месяца для оплаты (1–31) или оставьте поле пустым:")
+    kb = ReplyKeyboardMarkup(
+        [["Оставить пустым"]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+    await update.message.reply_text(
+        "Введите день месяца для оплаты (1–31) или нажмите «Оставить пустым»:",
+        reply_markup=kb,
+    )
     return PAYDAY
 
 
 async def ask_payday(update: Update, context: ContextTypes.DEFAULT_TYPE):
     s = (update.message.text or "").strip()
-    if s == "":
-        # Пользователь оставил поле пустым: день оплаты будет вписан вручную на бумаге.
-        # В документ подставим небольшой пробельный зазор.
+    lower = s.lower()
+    if lower == "оставить пустым" or s == "":
+        # Пользователь явно выбрал оставить поле пустым (кнопкой)
+        # или отправил пустой ввод: день оплаты будет вписан вручную на бумаге.
         context.user_data["data_opl"] = None
     else:
         if not s.isdigit():
-            await update.message.reply_text("Введите число 1–31 или оставьте поле пустым:")
+            await update.message.reply_text("Введите число 1–31 или нажмите «Оставить пустым»:")
             return PAYDAY
         d = int(s)
         if d < 1 or d > 31:
-            await update.message.reply_text("День оплаты должен быть 1–31 или оставьте поле пустым. Повторите:")
+            await update.message.reply_text("День оплаты должен быть 1–31 или нажмите «Оставить пустым». Повторите:")
             return PAYDAY
         context.user_data["data_opl"] = d
 
