@@ -462,19 +462,17 @@ async def confirm_and_generate(update: Update, context: ContextTypes.DEFAULT_TYP
         ostatok_dolga = max(0, polnaya_stoimost - ud["pervi_vznos"])
         payday = ud.get("data_opl")
 
-        if payday is not None:
-            schedule = generate_schedule(
-                start_date=ud["data_dogovora_dt"],
-                term=ud["srok_dogov"],
-                payday=payday,
-                cost=polnaya_stoimost,
-                advance=ud["pervi_vznos"],
-            )
-            ejemes = schedule[0]["amount"] if schedule else 0
-        else:
-            # День оплаты не задан → график будет заполняться вручную на бумаге.
-            schedule = []
-            ejemes = ""
+        # Даже если день оплаты не задан, считаем график для сумм и остатков,
+        # а даты оставляем пустыми для ручного заполнения.
+        effective_payday = payday if payday is not None else 1
+        schedule = generate_schedule(
+            start_date=ud["data_dogovora_dt"],
+            term=ud["srok_dogov"],
+            payday=effective_payday,
+            cost=polnaya_stoimost,
+            advance=ud["pervi_vznos"],
+        )
+        ejemes = schedule[0]["amount"] if schedule else 0
 
         payday_text = str(payday) if payday is not None else "    "
 
@@ -502,7 +500,8 @@ async def confirm_and_generate(update: Update, context: ContextTypes.DEFAULT_TYP
         for i in range(1, 13):
             if i <= len(schedule):
                 row = schedule[i - 1]
-                repl[f"{{{{data_plateja{i}}}}}"] = row["date"]
+                # Даты платежей всегда оставляем пустыми — заполняются вручную.
+                repl[f"{{{{data_plateja{i}}}}}"] = ""
                 repl[f"{{{{summa_plateja{i}}}}}"] = row["amount"]
                 repl[f"{{{{ostatok_posle_plateja{i}}}}}"] = row["balance"]
             else:
