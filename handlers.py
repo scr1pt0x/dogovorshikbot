@@ -511,7 +511,9 @@ async def confirm_and_generate(update: Update, context: ContextTypes.DEFAULT_TYP
 
         repl["contract_number"] = ud["contract_number"]
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        generated_docs = generate_contract_and_schedule(data=repl, out_dir=OUTPUT_DIR)
+        generated_docs = generate_contract_and_schedule(
+            data=repl, out_dir=OUTPUT_DIR, schedule=schedule
+        )
 
     try:
         for path in generated_docs:

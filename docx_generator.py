@@ -4,7 +4,7 @@
 from pathlib import Path
 import copy
 import subprocess
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from docx import Document
 from docx.document import Document as DocxDocument
@@ -463,6 +463,49 @@ def fill_placeholders(
     doc.save(str(output_path))
 
 
+def _set_cell_text(
+    cell,
+    text: str,
+    font_name: str = "Times New Roman",
+    font_size_pt: int = 10,
+) -> None:
+    cell.text = text
+    for para in cell.paragraphs:
+        for run in para.runs:
+            _set_run_font(run, font_name, font_size_pt)
+
+
+def _find_murabaha_schedule_table(doc: DocxDocument):
+    for table in doc.tables:
+        if table.rows and "№ платежа" in " | ".join(c.text for c in table.rows[0].cells):
+            return table
+    return None
+
+
+def _fill_murabaha_schedule_table(doc: DocxDocument, schedule: List[dict]) -> None:
+    """
+    Заполняет таблицу графика платежей напрямую (дата, сумма, остаток),
+    не полагаясь только на замену плейсхолдеров в шаблоне.
+    """
+    table = _find_murabaha_schedule_table(doc)
+    if table is None or len(table.rows) < 13:
+        return
+
+    for i in range(1, 13):
+        row = table.rows[i]
+        if len(row.cells) < 4:
+            continue
+        if i <= len(schedule):
+            entry = schedule[i - 1]
+            _set_cell_text(row.cells[1], entry["date"])
+            _set_cell_text(row.cells[2], str(entry["amount"]))
+            _set_cell_text(row.cells[3], str(entry["balance"]))
+        else:
+            _set_cell_text(row.cells[1], "")
+            _set_cell_text(row.cells[2], "")
+            _set_cell_text(row.cells[3], "")
+
+
 def convert_docx_to_pdf(docx_path: Path) -> Path:
     """
     Конвертация DOCX → PDF через LibreOffice (headless).
@@ -481,7 +524,7 @@ def convert_docx_to_pdf(docx_path: Path) -> Path:
 
 
 # noinspection SpellCheckingInspection,PyPep8Naming
-def generate_contract_and_schedule(data: dict, out_dir: Path):
+def generate_contract_and_schedule(data: dict, out_dir: Path, schedule: Optional[List[dict]] = None):
     """
     Формирует два готовых docx:
     1) Договор (templates/murabaha_template.docx)
@@ -499,6 +542,11 @@ def generate_contract_and_schedule(data: dict, out_dir: Path):
 
     fill_placeholders(contract_template, contract_out, data)
     fill_placeholders(schedule_template, schedule_out, data)
+
+    if schedule:
+        doc = Document(str(schedule_out))
+        _fill_murabaha_schedule_table(doc, schedule)
+        doc.save(str(schedule_out))
 
     return contract_out, schedule_out
 
