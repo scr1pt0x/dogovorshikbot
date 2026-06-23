@@ -497,22 +497,19 @@ async def confirm_and_generate(update: Update, context: ContextTypes.DEFAULT_TYP
             "{{ostatok_dolga}}": ostatok_dolga,
         }
 
-        for i in range(1, 13):
-            if i <= len(schedule):
-                row = schedule[i - 1]
-                # Даты платежей всегда оставляем пустыми — заполняются вручную.
-                repl[f"{{{{data_plateja{i}}}}}"] = ""
-                repl[f"{{{{summa_plateja{i}}}}}"] = row["amount"]
-                repl[f"{{{{ostatok_posle_plateja{i}}}}}"] = row["balance"]
-            else:
-                repl[f"{{{{data_plateja{i}}}}}"] = ""
-                repl[f"{{{{summa_plateja{i}}}}}"] = ""
-                repl[f"{{{{ostatok_posle_plateja{i}}}}}"] = ""
+        for i in range(1, len(schedule) + 1):
+            row = schedule[i - 1]
+            repl[f"{{{{data_plateja{i}}}}}"] = row["date"] if payday is not None else ""
+            repl[f"{{{{summa_plateja{i}}}}}"] = row["amount"]
+            repl[f"{{{{ostatok_posle_plateja{i}}}}}"] = row["balance"]
 
         repl["contract_number"] = ud["contract_number"]
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         generated_docs = generate_contract_and_schedule(
-            data=repl, out_dir=OUTPUT_DIR, schedule=schedule
+            data=repl,
+            out_dir=OUTPUT_DIR,
+            schedule=schedule,
+            include_dates=(payday is not None),
         )
 
     try:

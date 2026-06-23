@@ -482,28 +482,51 @@ def _find_murabaha_schedule_table(doc: DocxDocument):
     return None
 
 
-def _fill_murabaha_schedule_table(doc: DocxDocument, schedule: List[dict]) -> None:
+def _fill_murabaha_schedule_table(
+    doc: DocxDocument,
+    schedule: List[dict],
+    include_dates: bool = True,
+) -> None:
     """
-    Заполняет таблицу графика платежей напрямую (дата, сумма, остаток),
-    не полагаясь только на замену плейсхолдеров в шаблоне.
+    Подгоняет таблицу графика под фактический срок и заполняет строки платежей.
     """
     table = _find_murabaha_schedule_table(doc)
-    if table is None or len(table.rows) < 13:
+    if table is None or len(table.rows) < 2:
         return
 
-    for i in range(1, 13):
+    payment_start = 1
+    total_idx = len(table.rows) - 1
+    if total_idx <= payment_start:
+        return
+
+    term = len(schedule)
+    if term < 1:
+        return
+
+    existing_payments = total_idx - payment_start
+    template_row = table.rows[payment_start]
+
+    while existing_payments < term:
+        new_tr = copy.deepcopy(template_row._tr)
+        table._tbl.insert(total_idx, new_tr)
+        existing_payments += 1
+        total_idx += 1
+
+    while existing_payments > term:
+        table._tbl.remove(table.rows[payment_start + term]._tr)
+        existing_payments -= 1
+        total_idx -= 1
+
+    for i in range(1, term + 1):
         row = table.rows[i]
         if len(row.cells) < 4:
             continue
-        if i <= len(schedule):
-            entry = schedule[i - 1]
-            _set_cell_text(row.cells[1], entry["date"])
-            _set_cell_text(row.cells[2], str(entry["amount"]))
-            _set_cell_text(row.cells[3], str(entry["balance"]))
-        else:
-            _set_cell_text(row.cells[1], "")
-            _set_cell_text(row.cells[2], "")
-            _set_cell_text(row.cells[3], "")
+        entry = schedule[i - 1]
+        _set_cell_text(row.cells[0], f"{i} платеж")
+        date_text = entry["date"] if include_dates else ""
+        _set_cell_text(row.cells[1], date_text)
+        _set_cell_text(row.cells[2], str(entry["amount"]))
+        _set_cell_text(row.cells[3], str(entry["balance"]))
 
 
 def convert_docx_to_pdf(docx_path: Path) -> Path:
@@ -524,7 +547,12 @@ def convert_docx_to_pdf(docx_path: Path) -> Path:
 
 
 # noinspection SpellCheckingInspection,PyPep8Naming
-def generate_contract_and_schedule(data: dict, out_dir: Path, schedule: Optional[List[dict]] = None):
+def generate_contract_and_schedule(
+    data: dict,
+    out_dir: Path,
+    schedule: Optional[List[dict]] = None,
+    include_dates: bool = True,
+):
     """
     Формирует два готовых docx:
     1) Договор (templates/murabaha_template.docx)
@@ -537,15 +565,15 @@ def generate_contract_and_schedule(data: dict, out_dir: Path, schedule: Optional
     schedule_template = TEMPLATE_SCHEDULE
 
     safe_number = str(data["contract_number"]).replace("/", "_")
-    contract_out = out_dir / f"dogovor_{safe_number}.docx"
-    schedule_out = out_dir / f"schedule_{safe_number}.docx"
+    contract_out = out_dir / f"Договор_{safe_number}.docx"
+    schedule_out = out_dir / f"График_платежей_{safe_number}.docx"
 
     fill_placeholders(contract_template, contract_out, data)
     fill_placeholders(schedule_template, schedule_out, data)
 
     if schedule:
         doc = Document(str(schedule_out))
-        _fill_murabaha_schedule_table(doc, schedule)
+        _fill_murabaha_schedule_table(doc, schedule, include_dates=include_dates)
         doc.save(str(schedule_out))
 
     return contract_out, schedule_out
